@@ -58,23 +58,30 @@ module RubyLLM
           }.compact
         end
 
+        def format_parameter(param)
+          formatted_param = {
+            type: param_type_for_gemini(param.type),
+            description: param.description,                
+          }
+          if param.type.to_s == 'array' && param.items && param.items['type']            
+            formatted_param[:items] = {
+              type: param_type_for_gemini(param.items['type']),
+              # description: param.items.description
+            }
+          elsif param.type.to_s == 'object' && param.properties
+            formatted_param[:properties] = param.properties.transform_values do |param|
+              format_parameter(param)
+            end
+          end
+          formatted_param.compact
+        end
+
         # Format tool parameters for Gemini API
         def format_parameters(parameters)
           {
             type: 'OBJECT',
             properties: parameters.transform_values do |param|
-              formatted_param = {
-                type: param_type_for_gemini(param.type),
-                description: param.description,                
-              }
-              if param.type.to_s == 'array' && param.items && param.items['type']
-                
-                formatted_param[:items] = {
-                  type: param_type_for_gemini(param.items['type']),
-                  # description: param.items.description
-                }
-              end
-              formatted_param.compact
+              format_parameter(param)
             end,
             required: parameters.select { |_, p| p.required }.keys.map(&:to_s)
           }
