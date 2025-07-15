@@ -108,27 +108,67 @@ module RubyLLM
 
           schema = RubyLLM::Utils.deep_stringify_keys(schema)
 
-          raise ArgumentError, 'Gemini tool parameters must be objects' unless schema['type'] == 'object'
+          #raise ArgumentError, 'Gemini tool parameters must be objects' unless schema['type'] == 'object'
 
+          #{
+          #  type: 'OBJECT',
+          #  properties: schema.fetch('properties', {}).transform_values { |property| convert_property(property) },
+          #  required: (schema['required'] || []).map(&:to_s)
+          #}
+	        format_parameters(schema.fetch('properties', {}))
+        end
+
+        def format_mcp_parameter(param)
+          formatted_param = {
+            type: param_type_for_gemini(param.type),
+            description: param.description,                
+          }
+          if param.type.to_s == 'array' && param.items && param.items['type']            
+            formatted_param[:items] = {
+              type: param_type_for_gemini(param.items['type']),
+              # description: param.items.description
+            }
+          elsif param.type.to_s == 'object' && param.properties
+            formatted_param[:properties] = param.properties.transform_values do |param|
+              format_parameter(param)
+            end
+          end
+          formatted_param.compact
+        end
+
+        def format_parameter(param)
+          unless param.is_a?(Hash)
+            return format_mcp_parameter(param)
+          end
+          formatted_param = {
+            type: param_type_for_gemini(param['type']),
+            description: param['description'],                
+          }
+          if param['type'].to_s == 'array' && param['items'] && param['items']['type']            
+            formatted_param[:items] = {
+              type: param_type_for_gemini(param['items']['type']),
+              # description: param.items.description
+            }
+          elsif param['type'].to_s == 'object' && param['properties']
+            formatted_param[:properties] = param['properties'].transform_values do |param|
+              format_parameter(param)
+            end
+          end
+          formatted_param.compact
+        end
+
+        # Format tool parameters for Gemini API
+        def format_parameters(parameters)
           {
             type: 'OBJECT',
-            properties: parameters.transform_values do |param|
-              formatted_param = {
-                type: param_type_for_gemini(param.type),
-                description: param.description,                
-              }
-              if param.type.to_s == 'array' && param.items && param.items['type']
-                
-                formatted_param[:items] = {
-                  type: param_type_for_gemini(param.items['type']),
-                  # description: param.items.description
-                }
-              end
-              formatted_param.compact
+            properties: parameters.transform_values do |property|
+              format_parameter(property)
+                # convert_property(property)
             end,
-            required: parameters.select { |_, p| p.required }.keys.map(&:to_s)
+            required: parameters.select { |_, p| (p.is_a?(Hash) ? p['required'] : p.required) }.keys.map(&:to_s)
           }
-        end        
+        end   
+    
 
         def convert_property(property_schema) # rubocop:disable Metrics/PerceivedComplexity
           normalized_schema = normalize_any_of_schema(property_schema)
